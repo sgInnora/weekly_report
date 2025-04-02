@@ -1,0 +1,78 @@
+name: Weekly Protocol Report
+
+on:
+  schedule:
+    # Run every Sunday at 23:00 UTC
+    - cron: '0 23 * * 0'
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main repository
+        uses: actions/checkout@v3
+        with:
+          repository: sgInnora/zeta
+          ref: main
+          path: main-repo
+          
+      - name: Checkout report repository
+        uses: actions/checkout@v3
+        with:
+          repository: sgInnora/weekly_report
+          path: report-repo
+          token: ${{ secrets.PAT_TOKEN }}
+
+      # Generate timestamps and file paths
+      - name: Generate report metadata
+        id: metadata
+        run: |
+          TIMESTAMP=$(date +"%Y-%m-%d")
+          WEEK_NUM=$(date +"%U")
+          YEAR=$(date +"%Y")
+          echo "::set-output name=timestamp::$TIMESTAMP"
+          echo "::set-output name=week-num::$WEEK_NUM"
+          echo "::set-output name=year::$YEAR"
+          echo "::set-output name=report-folder::reports/$YEAR/week_$WEEK_NUM"
+          echo "::set-output name=report-name::protocol_report_$TIMESTAMP"
+
+      # Copy reports and necessary assets
+      - name: Set up report directory
+        run: |
+          mkdir -p report-repo/${{ steps.metadata.outputs.report-folder }}
+          
+          # Copy reports
+          cp main-repo/backend/docs/detailed_protocol_report.md report-repo/${{ steps.metadata.outputs.report-folder }}/${{ steps.metadata.outputs.report-name }}_zh.md
+          cp main-repo/backend/docs/detailed_protocol_report_en.md report-repo/${{ steps.metadata.outputs.report-folder }}/${{ steps.metadata.outputs.report-name }}_en.md
+          
+          # Copy logo if exists
+          if [ -f main-repo/backend/docs/innora_logo.png ]; then
+            cp main-repo/backend/docs/innora_logo.png report-repo/${{ steps.metadata.outputs.report-folder }}/
+          fi
+
+      # Update index file
+      - name: Update index
+        run: |
+          cd report-repo
+          INDEX_FILE="index.md"
+          
+          # Add entry for this week
+          RELATIVE_PATH="${{ steps.metadata.outputs.report-folder }}"
+          REPORT_NAME="${{ steps.metadata.outputs.report-name }}"
+          TIMESTAMP="${{ steps.metadata.outputs.timestamp }}"
+          YEAR="${{ steps.metadata.outputs.year }}"
+          WEEK_NUM="${{ steps.metadata.outputs.week-num }}"
+          
+          echo "| $TIMESTAMP | $YEAR-W$WEEK_NUM | [中文报告]($RELATIVE_PATH/${REPORT_NAME}_zh.md) | [English Report]($RELATIVE_PATH/${REPORT_NAME}_en.md) |" >> "$INDEX_FILE"
+
+      # Commit and push changes
+      - name: Commit and push
+        run: |
+          cd report-repo
+          git config --local user.email "github-actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git add .
+          git commit -m "Add protocol report for week ${{ steps.metadata.outputs.week-num }} of ${{ steps.metadata.outputs.year }} (${{ steps.metadata.outputs.timestamp }})"
+          git push
