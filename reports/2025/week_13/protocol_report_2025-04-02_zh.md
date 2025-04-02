@@ -1,4 +1,4 @@
-# 即时通讯与社交媒体应用协议技术分析报告 ![Innora.ai Logo](innora_logo.png)
+# 即时通讯与社交媒体应用协议技术分析报告
 
 <div style="text-align: right">
 文档编号: IPTR-2025-04-01<br>
@@ -101,11 +101,143 @@
 
 - **高安全性认证加密**：WhatsApp、Facebook Messenger和Instagram采用的方案结合了数据加密和认证功能，提供完整性保护并支持并行处理，性能和安全性均处于领先水平。
 
+  - WhatsApp使用AES-256-GCM (Galois/Counter Mode)，提供了高效的认证加密：
+  ```java
+  // WhatsApp加密伪代码示例
+  public byte[] encryptMessage(byte[] plaintext, byte[] key, byte[] iv, byte[] associatedData) {
+      SecretKeySpec secretKey = new SecretKeySpec(key, "AES");
+      GCMParameterSpec gcmSpec = new GCMParameterSpec(128, iv); // 使用128位认证标签
+      
+      Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+      cipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmSpec);
+      
+      if (associatedData != null) {
+          cipher.updateAAD(associatedData); // 添加关联数据以增强安全性
+      }
+      
+      return cipher.doFinal(plaintext);
+  }
+  ```
+
+  - Facebook Messenger同样使用AEAD (Authenticated Encryption with Associated Data)，但基于ChaCha20-Poly1305进行了优化，特别适用于移动设备：
+  ```kotlin
+  // Facebook Messenger加密伪代码示例
+  fun encryptMessage(plaintext: ByteArray, key: ByteArray, nonce: ByteArray, associatedData: ByteArray?): ByteArray {
+      val cipher = ChaCha20Poly1305(key)
+      return cipher.encrypt(nonce, plaintext, associatedData)
+  }
+  ```
+
 - **传统加密模式**：Zalo、LINE和KakaoTalk使用较为传统的加密方案，需要额外的消息认证机制配合使用，安全性适中但实现简单。
+
+  - Zalo典型实现使用AES-CBC加密配合HMAC-SHA256进行消息认证：
+  ```java
+  // Zalo加密与认证伪代码
+  public byte[] encryptAndAuthenticate(byte[] plaintext, byte[] encKey, byte[] macKey, byte[] iv) {
+      // 加密
+      SecretKeySpec secretKey = new SecretKeySpec(encKey, "AES");
+      IvParameterSpec ivSpec = new IvParameterSpec(iv);
+      Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+      cipher.init(Cipher.ENCRYPT_MODE, secretKey, ivSpec);
+      byte[] ciphertext = cipher.doFinal(plaintext);
+      
+      // 消息认证
+      Mac hmac = Mac.getInstance("HmacSHA256");
+      SecretKeySpec macKeySpec = new SecretKeySpec(macKey, "HmacSHA256");
+      hmac.init(macKeySpec);
+      hmac.update(iv);
+      hmac.update(ciphertext);
+      byte[] mac = hmac.doFinal();
+      
+      // 组合结果: IV + 密文 + MAC
+      ByteBuffer result = ByteBuffer.allocate(iv.length + ciphertext.length + mac.length);
+      result.put(iv);
+      result.put(ciphertext);
+      result.put(mac);
+      return result.array();
+  }
+  ```
 
 - **低功耗加密**：部分应用针对移动设备提供了特殊优化的加密方案，在保持安全性的同时显著降低电池消耗，适合资源受限设备。
 
+  - TikTok等应用对ChaCha20流密码进行优化，在低功耗设备上执行效率高：
+  ```c++
+  // TikTok低功耗加密伪代码
+  void chacha20_encrypt(uint8_t* output, const uint8_t* input, size_t length,
+                        const uint8_t key[32], const uint8_t nonce[12], uint32_t counter) {
+      chacha20_state state;
+      chacha20_init(&state, key, nonce, counter);
+      
+      // 使用SIMD指令加速流密码生成
+      #if defined(HAVE_ARM_NEON)
+      chacha20_encrypt_neon(&state, output, input, length);
+      #elif defined(HAVE_SSE2)
+      chacha20_encrypt_sse2(&state, output, input, length);
+      #else
+      chacha20_encrypt_generic(&state, output, input, length);
+      #endif
+      
+      // 进行消息认证计算
+      poly1305_auth(mac_out, output, length, poly1305_key);
+  }
+  ```
+
 - **定制加密方案**：Telegram和WeChat实现了高度定制化的加密模式，与标准实现有显著差异，这提供了独特的安全特性但也增加了兼容性和审计难度。
+
+  - Telegram的MTProto 2.0协议使用多层密钥派生和自定义IGE模式：
+  ```python
+  # Telegram MTProto加密伪代码
+  def encrypt_mtproto_message(plaintext, auth_key, msg_id, seq_no, salt):
+      # 生成消息密钥
+      msg_key = sha256(auth_key[88:120] + plaintext)[8:24]
+      
+      # 密钥派生函数
+      sha256_a = sha256(msg_key + auth_key[0:36])
+      sha256_b = sha256(auth_key[40:76] + msg_key)
+      
+      aes_key = sha256_a[0:8] + sha256_b[8:24] + sha256_a[24:32]
+      aes_iv = sha256_b[0:8] + sha256_a[8:24] + sha256_b[24:32]
+      
+      # 使用IGE模式进行加密
+      encrypted_data = aes_ige_encrypt(plaintext, aes_key, aes_iv)
+      
+      return msg_key + encrypted_data
+  ```
+
+  - WeChat使用了混合加密体系，结合了国密算法和国际算法：
+  ```go
+  // WeChat加密伪代码
+  func encryptWeChatMessage(plaintext []byte, sessionKey []byte) ([]byte, error) {
+      // 生成随机填充
+      padding := generateRandomPadding(1, 16)
+      paddedData := append(plaintext, padding...)
+      
+      // 生成IV
+      iv := generateRandomBytes(16)
+      
+      // 结合SM4和AES算法
+      var ciphertext []byte
+      if useNationalAlgorithm() {
+          // 使用国密SM4算法
+          ciphertext = sm4_cbc_encrypt(paddedData, sessionKey, iv)
+      } else {
+          // 使用AES算法
+          ciphertext = aes_cbc_encrypt(paddedData, sessionKey, iv)
+      }
+      
+      // 添加数据包头和校验码
+      packetLen := len(iv) + len(ciphertext) + HEADER_SIZE
+      header := createPacketHeader(packetLen)
+      packet := append(header, iv...)
+      packet = append(packet, ciphertext...)
+      
+      // 添加校验码
+      checksum := hmac_sha256(packet, sessionKey)
+      packet = append(packet, checksum[:4]...)
+      
+      return packet, nil
+  }
+  ```
 
 #### 4.2.2 密钥交换机制
 
@@ -113,9 +245,156 @@
 
 - **现代椭圆曲线方案**：西方主流应用倾向于采用高效的椭圆曲线方案，提供同等安全强度下更小的密钥尺寸和更高的计算效率。
 
+  - WhatsApp和Signal使用X3DH (Extended Triple Diffie-Hellman)协议：
+  ```java
+  // Signal/WhatsApp X3DH密钥协商伪代码
+  public KeyBundle performX3DH(IdentityKey localIdentity, 
+                               OneTimePreKey localOneTime, 
+                               SignedPreKey localSigned,
+                               IdentityKey remoteIdentity, 
+                               OneTimePreKey remoteOneTime, 
+                               SignedPreKey remoteSigned) {
+      
+      // DH1 = DH(IKa, SPKb)
+      byte[] dh1 = curve25519Agreement(localIdentity.getPrivateKey(), 
+                                      remoteSigned.getPublicKey());
+      
+      // DH2 = DH(EKa, IKb)
+      byte[] dh2 = curve25519Agreement(localOneTime.getPrivateKey(), 
+                                      remoteIdentity.getPublicKey());
+      
+      // DH3 = DH(EKa, SPKb)
+      byte[] dh3 = curve25519Agreement(localOneTime.getPrivateKey(), 
+                                      remoteSigned.getPublicKey());
+      
+      // DH4 = DH(EKa, OPKb) [如果使用了一次性预共享密钥]
+      byte[] dh4 = null;
+      if (remoteOneTime != null) {
+          dh4 = curve25519Agreement(localOneTime.getPrivateKey(), 
+                                   remoteOneTime.getPublicKey());
+      }
+      
+      // 使用HKDF合并多个共享秘密，生成主密钥
+      byte[] masterSecret = concatenate(dh1, dh2, dh3);
+      if (dh4 != null) {
+          masterSecret = concatenate(masterSecret, dh4);
+      }
+      
+      // 密钥派生函数生成会话密钥
+      byte[] sessionKey = HKDF.deriveSecrets(masterSecret,
+                                           "X3DH_SESSION_KEY".getBytes(),
+                                           64);
+      
+      return new KeyBundle(sessionKey);
+  }
+  ```
+
+  - Facebook Messenger使用ECDHE (Elliptic Curve Diffie-Hellman Ephemeral)：
+  ```kotlin
+  // Facebook Messenger ECDHE密钥交换伪代码
+  fun performECDHE(localKeyPair: ECKeyPair, remotePublicKey: ECPublicKey): ByteArray {
+      // 使用Curve25519或P-256执行ECDH
+      val sharedSecret = curve25519.generateSharedSecret(
+          localKeyPair.privateKey,
+          remotePublicKey
+      )
+      
+      // 使用HKDF和会话信息派生最终密钥
+      return HKDF.deriveSecrets(
+          sharedSecret,
+          byteArrayOf(), // 可选盐值
+          "ECDHE_SESSION_KEY".toByteArray(),
+          32 // 派生32字节密钥
+      )
+  }
+  ```
+
 - **传统非对称加密**：部分亚洲应用仍然依赖传统方案，密钥长度和计算复杂度较高，但已被广泛验证。
 
+  - KakaoTalk使用标准RSA-2048结合临时会话密钥：
+  ```java
+  // KakaoTalk密钥交换伪代码
+  public byte[] exchangeSessionKey(PublicKey recipientPublicKey) {
+      // 生成随机会话密钥
+      byte[] sessionKey = generateRandomBytes(32);
+      
+      // 使用RSA-OAEP加密会话密钥
+      Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
+      cipher.init(Cipher.ENCRYPT_MODE, recipientPublicKey);
+      byte[] encryptedSessionKey = cipher.doFinal(sessionKey);
+      
+      // 添加密钥交换信息头
+      ByteBuffer buffer = ByteBuffer.allocate(4 + encryptedSessionKey.length);
+      buffer.putInt(KEY_EXCHANGE_VERSION);
+      buffer.put(encryptedSessionKey);
+      
+      return buffer.array();
+  }
+  ```
+
 - **国家特定标准**：某些应用根据其主要市场的监管要求集成了特定的国家标准算法，导致不同区域版本间存在技术差异。
+
+  - WeChat的国内版本支持SM2椭圆曲线算法：
+  ```go
+  // WeChat SM2密钥交换伪代码
+  func exchangeKeysSM2(serverPublicKey []byte) ([]byte, error) {
+      // 生成临时SM2密钥对
+      privateKey, publicKey, err := sm2.GenerateKey(rand.Reader)
+      if err != nil {
+          return nil, err
+      }
+      
+      // 生成会话密钥材料
+      sessionKeyMaterial := make([]byte, 32)
+      _, err = rand.Read(sessionKeyMaterial)
+      if err != nil {
+          return nil, err
+      }
+      
+      // 使用SM2加密会话密钥
+      encryptedKey, err := sm2.Encrypt(serverPublicKey, sessionKeyMaterial)
+      if err != nil {
+          return nil, err
+      }
+      
+      // 构建交换消息
+      message := struct {
+          PublicKey []byte
+          EncryptedKey []byte
+          Timestamp int64
+      }{
+          PublicKey: publicKey.Bytes(),
+          EncryptedKey: encryptedKey,
+          Timestamp: time.Now().Unix(),
+      }
+      
+      // 序列化并返回
+      return json.Marshal(message)
+  }
+  ```
+
+  - Zalo根据区域使用不同的密钥交换算法：
+  ```java
+  // Zalo区域适应密钥交换伪代码
+  public byte[] exchangeKey(String region, PublicKey serverKey) {
+      if (region.equals("VN") || region.equals("ASIA")) {
+          // 对亚洲区域使用SM2/SM9
+          return exchangeKeyWithNationalAlgorithm(serverKey);
+      } else {
+          // 其他区域使用标准P-256
+          KeyPairGenerator keyGen = KeyPairGenerator.getInstance("EC");
+          ECGenParameterSpec ecSpec = new ECGenParameterSpec("secp256r1");
+          keyGen.initialize(ecSpec);
+          KeyPair keyPair = keyGen.generateKeyPair();
+          
+          KeyAgreement keyAgreement = KeyAgreement.getInstance("ECDH");
+          keyAgreement.init(keyPair.getPrivate());
+          keyAgreement.doPhase(serverKey, true);
+          
+          return keyAgreement.generateSecret();
+      }
+  }
+  ```
 
 #### 4.2.3 消息认证与完整性
 

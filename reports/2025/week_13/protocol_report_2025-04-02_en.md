@@ -1,4 +1,4 @@
-# Messaging and Social Media Applications Protocol Analysis Report ![Innora.ai Logo](innora_logo.png)
+# Messaging and Social Media Applications Protocol Analysis Report
 
 <div style="text-align: right">
 Document ID: IPTR-2025-04-01<br>
@@ -101,11 +101,143 @@ Based on our analysis, different applications show significant differences in sy
 
 - **High-security Authenticated Encryption**: Protocols used by WhatsApp, Facebook Messenger, and Instagram combine data encryption and authentication functions, providing integrity protection and supporting parallel processing, with performance and security at leading levels.
 
+  - WhatsApp implements AES-256-GCM (Galois/Counter Mode) for efficient authenticated encryption:
+  ```java
+  // WhatsApp encryption pseudocode example
+  public byte[] encryptMessage(byte[] plaintext, byte[] key, byte[] iv, byte[] associatedData) {
+      SecretKeySpec secretKey = new SecretKeySpec(key, "AES");
+      GCMParameterSpec gcmSpec = new GCMParameterSpec(128, iv); // 128-bit authentication tag
+      
+      Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+      cipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmSpec);
+      
+      if (associatedData != null) {
+          cipher.updateAAD(associatedData); // Add associated data for enhanced security
+      }
+      
+      return cipher.doFinal(plaintext);
+  }
+  ```
+
+  - Facebook Messenger also uses AEAD (Authenticated Encryption with Associated Data), but optimizes with ChaCha20-Poly1305, particularly suitable for mobile devices:
+  ```kotlin
+  // Facebook Messenger encryption pseudocode example
+  fun encryptMessage(plaintext: ByteArray, key: ByteArray, nonce: ByteArray, associatedData: ByteArray?): ByteArray {
+      val cipher = ChaCha20Poly1305(key)
+      return cipher.encrypt(nonce, plaintext, associatedData)
+  }
+  ```
+
 - **Traditional Encryption Modes**: Zalo, LINE, and KakaoTalk use more traditional encryption schemes that require additional message authentication mechanisms, offering moderate security but simpler implementation.
+
+  - Zalo typically implements AES-CBC encryption with HMAC-SHA256 for message authentication:
+  ```java
+  // Zalo encryption and authentication pseudocode
+  public byte[] encryptAndAuthenticate(byte[] plaintext, byte[] encKey, byte[] macKey, byte[] iv) {
+      // Encryption
+      SecretKeySpec secretKey = new SecretKeySpec(encKey, "AES");
+      IvParameterSpec ivSpec = new IvParameterSpec(iv);
+      Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+      cipher.init(Cipher.ENCRYPT_MODE, secretKey, ivSpec);
+      byte[] ciphertext = cipher.doFinal(plaintext);
+      
+      // Message authentication
+      Mac hmac = Mac.getInstance("HmacSHA256");
+      SecretKeySpec macKeySpec = new SecretKeySpec(macKey, "HmacSHA256");
+      hmac.init(macKeySpec);
+      hmac.update(iv);
+      hmac.update(ciphertext);
+      byte[] mac = hmac.doFinal();
+      
+      // Combine results: IV + Ciphertext + MAC
+      ByteBuffer result = ByteBuffer.allocate(iv.length + ciphertext.length + mac.length);
+      result.put(iv);
+      result.put(ciphertext);
+      result.put(mac);
+      return result.array();
+  }
+  ```
 
 - **Low-power Encryption**: Some applications provide specially optimized encryption schemes for mobile devices, significantly reducing battery consumption while maintaining security, suitable for resource-constrained devices.
 
+  - TikTok and similar applications optimize ChaCha20 stream cipher for high efficiency on low-power devices:
+  ```c++
+  // TikTok low-power encryption pseudocode
+  void chacha20_encrypt(uint8_t* output, const uint8_t* input, size_t length,
+                        const uint8_t key[32], const uint8_t nonce[12], uint32_t counter) {
+      chacha20_state state;
+      chacha20_init(&state, key, nonce, counter);
+      
+      // Use SIMD instructions to accelerate stream cipher generation
+      #if defined(HAVE_ARM_NEON)
+      chacha20_encrypt_neon(&state, output, input, length);
+      #elif defined(HAVE_SSE2)
+      chacha20_encrypt_sse2(&state, output, input, length);
+      #else
+      chacha20_encrypt_generic(&state, output, input, length);
+      #endif
+      
+      // Calculate message authentication
+      poly1305_auth(mac_out, output, length, poly1305_key);
+  }
+  ```
+
 - **Custom Encryption Schemes**: Telegram and WeChat have implemented highly customized encryption modes that differ significantly from standard implementations, providing unique security features but also increasing compatibility and audit difficulty.
+
+  - Telegram's MTProto 2.0 protocol uses multi-layer key derivation and custom IGE mode:
+  ```python
+  # Telegram MTProto encryption pseudocode
+  def encrypt_mtproto_message(plaintext, auth_key, msg_id, seq_no, salt):
+      # Generate message key
+      msg_key = sha256(auth_key[88:120] + plaintext)[8:24]
+      
+      # Key derivation function
+      sha256_a = sha256(msg_key + auth_key[0:36])
+      sha256_b = sha256(auth_key[40:76] + msg_key)
+      
+      aes_key = sha256_a[0:8] + sha256_b[8:24] + sha256_a[24:32]
+      aes_iv = sha256_b[0:8] + sha256_a[8:24] + sha256_b[24:32]
+      
+      # Use IGE mode for encryption
+      encrypted_data = aes_ige_encrypt(plaintext, aes_key, aes_iv)
+      
+      return msg_key + encrypted_data
+  ```
+
+  - WeChat uses a hybrid encryption system, combining national and international algorithms:
+  ```go
+  // WeChat encryption pseudocode
+  func encryptWeChatMessage(plaintext []byte, sessionKey []byte) ([]byte, error) {
+      // Generate random padding
+      padding := generateRandomPadding(1, 16)
+      paddedData := append(plaintext, padding...)
+      
+      // Generate IV
+      iv := generateRandomBytes(16)
+      
+      // Combine SM4 and AES algorithms
+      var ciphertext []byte
+      if useNationalAlgorithm() {
+          // Use national SM4 algorithm
+          ciphertext = sm4_cbc_encrypt(paddedData, sessionKey, iv)
+      } else {
+          // Use AES algorithm
+          ciphertext = aes_cbc_encrypt(paddedData, sessionKey, iv)
+      }
+      
+      // Add packet header and checksum
+      packetLen := len(iv) + len(ciphertext) + HEADER_SIZE
+      header := createPacketHeader(packetLen)
+      packet := append(header, iv...)
+      packet = append(packet, ciphertext...)
+      
+      // Add checksum
+      checksum := hmac_sha256(packet, sessionKey)
+      packet = append(packet, checksum[:4]...)
+      
+      return packet, nil
+  }
+  ```
 
 #### 4.2.2 Key Exchange Mechanisms
 
@@ -113,9 +245,156 @@ Key exchange technologies vary significantly between applications:
 
 - **Modern Elliptic Curve Schemes**: Western mainstream applications tend to adopt efficient elliptic curve schemes, providing smaller key sizes and higher computational efficiency at equivalent security strength.
 
+  - WhatsApp and Signal use X3DH (Extended Triple Diffie-Hellman) protocol:
+  ```java
+  // Signal/WhatsApp X3DH key negotiation pseudocode
+  public KeyBundle performX3DH(IdentityKey localIdentity, 
+                               OneTimePreKey localOneTime, 
+                               SignedPreKey localSigned,
+                               IdentityKey remoteIdentity, 
+                               OneTimePreKey remoteOneTime, 
+                               SignedPreKey remoteSigned) {
+      
+      // DH1 = DH(IKa, SPKb)
+      byte[] dh1 = curve25519Agreement(localIdentity.getPrivateKey(), 
+                                      remoteSigned.getPublicKey());
+      
+      // DH2 = DH(EKa, IKb)
+      byte[] dh2 = curve25519Agreement(localOneTime.getPrivateKey(), 
+                                      remoteIdentity.getPublicKey());
+      
+      // DH3 = DH(EKa, SPKb)
+      byte[] dh3 = curve25519Agreement(localOneTime.getPrivateKey(), 
+                                      remoteSigned.getPublicKey());
+      
+      // DH4 = DH(EKa, OPKb) [if one-time pre-key was used]
+      byte[] dh4 = null;
+      if (remoteOneTime != null) {
+          dh4 = curve25519Agreement(localOneTime.getPrivateKey(), 
+                                   remoteOneTime.getPublicKey());
+      }
+      
+      // Combine multiple shared secrets using HKDF to generate master key
+      byte[] masterSecret = concatenate(dh1, dh2, dh3);
+      if (dh4 != null) {
+          masterSecret = concatenate(masterSecret, dh4);
+      }
+      
+      // Key derivation function generates session key
+      byte[] sessionKey = HKDF.deriveSecrets(masterSecret,
+                                           "X3DH_SESSION_KEY".getBytes(),
+                                           64);
+      
+      return new KeyBundle(sessionKey);
+  }
+  ```
+
+  - Facebook Messenger uses ECDHE (Elliptic Curve Diffie-Hellman Ephemeral):
+  ```kotlin
+  // Facebook Messenger ECDHE key exchange pseudocode
+  fun performECDHE(localKeyPair: ECKeyPair, remotePublicKey: ECPublicKey): ByteArray {
+      // Perform ECDH using Curve25519 or P-256
+      val sharedSecret = curve25519.generateSharedSecret(
+          localKeyPair.privateKey,
+          remotePublicKey
+      )
+      
+      // Derive final key using HKDF and session info
+      return HKDF.deriveSecrets(
+          sharedSecret,
+          byteArrayOf(), // Optional salt
+          "ECDHE_SESSION_KEY".toByteArray(),
+          32 // Derive 32-byte key
+      )
+  }
+  ```
+
 - **Traditional Asymmetric Encryption**: Some Asian applications still rely on traditional schemes with longer key lengths and higher computational complexity, but have been widely validated.
 
+  - KakaoTalk uses standard RSA-2048 with ephemeral session keys:
+  ```java
+  // KakaoTalk key exchange pseudocode
+  public byte[] exchangeSessionKey(PublicKey recipientPublicKey) {
+      // Generate random session key
+      byte[] sessionKey = generateRandomBytes(32);
+      
+      // Encrypt session key using RSA-OAEP
+      Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
+      cipher.init(Cipher.ENCRYPT_MODE, recipientPublicKey);
+      byte[] encryptedSessionKey = cipher.doFinal(sessionKey);
+      
+      // Add key exchange info header
+      ByteBuffer buffer = ByteBuffer.allocate(4 + encryptedSessionKey.length);
+      buffer.putInt(KEY_EXCHANGE_VERSION);
+      buffer.put(encryptedSessionKey);
+      
+      return buffer.array();
+  }
+  ```
+
 - **Country-specific Standards**: Some applications integrate specific national standard algorithms based on regulatory requirements in their primary markets, resulting in technical differences between regional versions.
+
+  - WeChat's mainland China version supports SM2 elliptic curve algorithm:
+  ```go
+  // WeChat SM2 key exchange pseudocode
+  func exchangeKeysSM2(serverPublicKey []byte) ([]byte, error) {
+      // Generate ephemeral SM2 key pair
+      privateKey, publicKey, err := sm2.GenerateKey(rand.Reader)
+      if err != nil {
+          return nil, err
+      }
+      
+      // Generate session key material
+      sessionKeyMaterial := make([]byte, 32)
+      _, err = rand.Read(sessionKeyMaterial)
+      if err != nil {
+          return nil, err
+      }
+      
+      // Encrypt session key using SM2
+      encryptedKey, err := sm2.Encrypt(serverPublicKey, sessionKeyMaterial)
+      if err != nil {
+          return nil, err
+      }
+      
+      // Build exchange message
+      message := struct {
+          PublicKey []byte
+          EncryptedKey []byte
+          Timestamp int64
+      }{
+          PublicKey: publicKey.Bytes(),
+          EncryptedKey: encryptedKey,
+          Timestamp: time.Now().Unix(),
+      }
+      
+      // Serialize and return
+      return json.Marshal(message)
+  }
+  ```
+
+  - Zalo uses different key exchange algorithms based on region:
+  ```java
+  // Zalo region-adaptive key exchange pseudocode
+  public byte[] exchangeKey(String region, PublicKey serverKey) {
+      if (region.equals("VN") || region.equals("ASIA")) {
+          // Use SM2/SM9 for Asian regions
+          return exchangeKeyWithNationalAlgorithm(serverKey);
+      } else {
+          // Use standard P-256 for other regions
+          KeyPairGenerator keyGen = KeyPairGenerator.getInstance("EC");
+          ECGenParameterSpec ecSpec = new ECGenParameterSpec("secp256r1");
+          keyGen.initialize(ecSpec);
+          KeyPair keyPair = keyGen.generateKeyPair();
+          
+          KeyAgreement keyAgreement = KeyAgreement.getInstance("ECDH");
+          keyAgreement.init(keyPair.getPrivate());
+          keyAgreement.doPhase(serverKey, true);
+          
+          return keyAgreement.generateSecret();
+      }
+  }
+  ```
 
 #### 4.2.3 Message Authentication and Integrity
 
